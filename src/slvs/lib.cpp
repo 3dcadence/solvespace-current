@@ -131,8 +131,13 @@ static bool Slvs_CanInitiallySatisfy(const ConstraintBase &c) {
         // Can initially satisfy if between a line segment and a workplane
         return c.ptA == EntityBase::NO_ENTITY;
 
-    case ConstraintBase::Type::POINTS_COINCIDENT:
     case ConstraintBase::Type::PT_ON_LINE:
+        // ModifyToSatisfy computes this one's position-along-the-line
+        // parameter directly; without seeding it the constraint starts
+        // at zero and yanks an already-satisfied point to the line's end.
+        return true;
+
+    case ConstraintBase::Type::POINTS_COINCIDENT:
     case ConstraintBase::Type::SYMMETRIC:
     case ConstraintBase::Type::SYMMETRIC_HORIZ:
     case ConstraintBase::Type::SYMMETRIC_VERT:
@@ -1047,12 +1052,18 @@ void Slvs_Solve(Slvs_System *ssys, uint32_t shg)
             for(Param &p : params) {
                 p.h = SK.param.AddAndAssignId(&p);
                 c.valP = p.h;
-                SYS.param.Add(&p);
             }
             params.Clear();
 
+            // Seed the constraint's own parameter before the solver
+            // takes its copy: the system holds values, not references,
+            // so a copy taken first would start Newton from zero and
+            // drag an already-satisfied constraint away from rest.
             if(Slvs_CanInitiallySatisfy(c)) {
                 c.ModifyToSatisfy();
+            }
+            if(c.valP.v) {
+                SYS.param.Add(SK.GetParam(c.valP));
             }
         }
 
