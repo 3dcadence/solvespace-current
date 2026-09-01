@@ -1,0 +1,8 @@
+option(BUILD_PYTHON "Build Python SWIG module")
+if(BUILD_PYTHON)
+    cmake_policy(SET CMP0078 NEW)
+    cmake_policy(SET CMP0086 NEW)
+    find_package(SWIG REQUIRED)
+    include(${SWIG_USE_FILE})
+    add_subdirectory(python)
+endif()

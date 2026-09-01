@@ -524,3 +524,4 @@ if(APPLE)
 endif()
 
 add_subdirectory(slvs)
+add_subdirectory(swig)
