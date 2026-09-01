@@ -19,6 +19,9 @@ const double System::CONVERGE_TOLERANCE = (LENGTH_EPS/(1e2));
 
 constexpr size_t LikelyPartialCountPerEq = 10;
 
+// Below this the least-squares step has no meaningful correction left.
+static const double STAGNATION_STEP = 1e-11;
+
 bool System::WriteJacobian(int tag) {
     // Clear all
     mat.param.clear();
@@ -368,6 +371,11 @@ bool System::NewtonSolve() {
 
         if(!SolveLeastSquares()) break;
 
+        double stepMag = 0;
+        for(i = 0; i < mat.n; i++) {
+            if(fabs(mat.X[i]) > stepMag) stepMag = fabs(mat.X[i]);
+        }
+
         // Take the Newton step;
         //      J(x_n) (x_{n+1} - x_n) = 0 - F(x_n)
         for(i = 0; i < mat.n; i++) {
@@ -394,6 +402,23 @@ bool System::NewtonSolve() {
             if(fabs(mat.B.num[i]) > CONVERGE_TOLERANCE) {
                 converged = false;
                 break;
+            }
+        }
+        if(!converged && stepMag < STAGNATION_STEP) {
+            // The step has died out, so no further iteration will help.
+            // A constraint restating something the sketch already holds, at
+            // numbers that agree only to the precision the drawing stores
+            // them at, lands exactly here: the residual it leaves is far
+            // below anything the geometry can see, but above the tolerance
+            // the loop insists on. Accept it rather than call a repeat a
+            // contradiction.
+            const double strictTol = CONVERGE_TOLERANCE*50.0;
+            converged = true;
+            for(i = 0; i < mat.m; i++) {
+                if(fabs(mat.B.num[i]) > strictTol) {
+                    converged = false;
+                    break;
+                }
             }
         }
     } while(iter++ < 50 && !converged);
