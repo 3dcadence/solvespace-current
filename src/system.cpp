@@ -319,8 +319,46 @@ bool System::SolveLeastSquares() {
         SparseMatrix<double> At = mat.A.num.transpose();
         At.makeCompressed();
 
+        // A Tikhonov ridge, the same one the dense path used to carry.
+        // A sketch that states something twice leaves a direction whose
+        // pivot is far below the rest while the residual along it is already
+        // at solver tolerance; dividing the one by the other produced Newton
+        // steps of millions and tore the drawing apart (measured on a
+        // rounded rectangle: residual 2.4e-7, pivot 3e-7, step 2.5e6).
+        // Factoring [A'; sqrt(lambda)*I] gives R'*R = A*A' + lambda*I, so
+        // the two triangular solves below become the damped ones without
+        // ever forming A*A'. Lambda is taken from the largest row norm of A,
+        // which is what the dense path added to its diagonal.
+        double maxNorm2 = 0;
+        for(int c = 0; c < At.outerSize(); c++) {
+            double s = 0;
+            for(SparseMatrix<double>::InnerIterator it(At, c); it; ++it) {
+                s += it.value()*it.value();
+            }
+            if(s > maxNorm2) maxNorm2 = s;
+        }
+        const double sqrtLambda = sqrt(maxNorm2*1e-11 + 1e-22);
+
+        SparseMatrix<double> Ad((int)At.rows() + mat.m, mat.m);
+        {
+            std::vector<Eigen::Triplet<double>> trips;
+            trips.reserve((size_t)At.nonZeros() + (size_t)mat.m);
+            for(int c = 0; c < At.outerSize(); c++) {
+                for(SparseMatrix<double>::InnerIterator it(At, c); it; ++it) {
+                    trips.push_back(
+                        Eigen::Triplet<double>((int)it.row(), c, it.value()));
+                }
+            }
+            for(int k = 0; k < mat.m; k++) {
+                trips.push_back(
+                    Eigen::Triplet<double>((int)At.rows() + k, k, sqrtLambda));
+            }
+            Ad.setFromTriplets(trips.begin(), trips.end());
+        }
+        Ad.makeCompressed();
+
         SparseQR<SparseMatrix<double>, COLAMDOrdering<int>> solver;
-        solver.compute(At);
+        solver.compute(Ad);
         if(solver.info() != Success) return false;
 
         const int rank = (int)solver.rank();
