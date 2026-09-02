@@ -1,0 +1,46 @@
+name: wheels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+            target: "11.0"
+          - name: macos-x86_64
+            os: macos-13
+            target: "10.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install the build tools
+        run: |
+          brew install swig ninja
+          python -m pip install --upgrade pip
+          python -m pip install scikit-build setuptools wheel cmake
+
+      - name: Build the wheel
+        working-directory: packaging
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.target }}
+        run: python setup.py bdist_wheel -G Ninja
+
+      - name: Keep the wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: packaging/dist/*.whl
